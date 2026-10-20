@@ -1,0 +1,17 @@
+{
+  "startUrls": [
+    { "url": "https://books.toscrape.com/catalogue/category/books/travel_2/index.html" },
+    { "url": "https://books.toscrape.com/catalogue/category/books/mystery_3/index.html" },
+    { "url": "https://books.toscrape.com/catalogue/category/books/historical-fiction_4/index.html" },
+    { "url": "https://books.toscrape.com/catalogue/category/books/sequential-art_5/index.html" },
+    { "url": "https://books.toscrape.com/catalogue/category/books/classics_6/index.html" }
+  ],
+  "globs": [],
+  "pseudoUrls": [],
+  "excludes": [],
+  "linkSelector": "",
+  "pageFunction": "async function pageFunction(context) {\n    const { $, request, log } = context;\n    const category = $('.page-header h1').text().trim();\n    const items = $('article.product_pod').map((i, el) => ({\n        url: new URL($(el).find('h3 a').attr('href'), request.loadedUrl).href,\n        title: $(el).find('h3 a').attr('title'),\n        price: $(el).find('.price_color').text().trim(),\n        category,\n    })).get();\n    log.info(category + ': ' + items.length + ' items');\n    return items;\n}",
+  "proxyConfiguration": { "useApifyProxy": true },
+  "maxRequestsPerCrawl": 10,
+  "respectRobotsTxtFile": true
+}
