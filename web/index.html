@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tenerife Medians Demo</title>
+<style>
+  :root { --bg:#f7f7f5; --fg:#1d1d1b; --muted:#6b6b66; --line:#dcdcd6; --card:#fff; --bad:#b3261e; --ok:#1e6b3a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --fg:#ecece8; --muted:#9a9a94; --line:#33332f; --card:#1f1f1d; --bad:#f2b8b5; --ok:#8fd19e; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:36px 0 4px; }
+  p.note { color:var(--muted); margin:0 0 14px; font-size:13px; }
+  .wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); }
+  th, td { padding:9px 12px; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th:first-child, td:first-child { text-align:left; }
+  th { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600; }
+  td.ok { color:var(--ok); font-weight:600; }
+  code { font-size:13px; }
+  #status { margin-top:28px; font-size:13px; color:var(--muted); }
+  #status.err { color:var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Price medians demo</h1>
+  <p class="note">Built as a small version of the Tenerife pricing pipeline. Every table below is read live from Supabase through an Edge Function on each page load.</p>
+
+  <h2>1. Median price by zone</h2>
+  <p class="note">Sample listings (fake data) in the shape of the pricing engine: Postgres view → Edge Function → this Cloudflare Pages page.</p>
+  <div class="wrap"><table>
+    <thead><tr><th>Zone</th><th>Listings</th><th>Median price</th><th>Median €/m²</th></tr></thead>
+    <tbody id="zones"><tr><td colspan="4">Loading…</td></tr></tbody>
+  </table></div>
+
+  <h2>2. Scraped via Apify: median price by category</h2>
+  <p class="note">Apify Cheerio Scraper on <code>books.toscrape.com</code> (a public scraping sandbox) → run-succeeded webhook → Edge Function → Supabase. Medians cross-checked against the source pages.</p>
+  <div class="wrap"><table>
+    <thead><tr><th>Category</th><th>Items</th><th>Median price</th></tr></thead>
+    <tbody id="cats"><tr><td colspan="3">Loading…</td></tr></tbody>
+  </table></div>
+
+  <h2>3. Ingest runs</h2>
+  <p class="note">The webhook body is not trusted: the function re-reads each run from the Apify API and only ingests runs that really succeeded. Rows are keyed on (source, item URL), so re-running the same scrape inserts nothing.</p>
+  <div class="wrap"><table>
+    <thead><tr><th>Received at</th><th>Run</th><th>Received</th><th>Valid</th><th>Newly inserted</th><th>Skipped</th></tr></thead>
+    <tbody id="runs"><tr><td colspan="6">Loading…</td></tr></tbody>
+  </table></div>
+
+  <div id="status"></div>
+</main>
+<script>
+  const FUNCTION_URL = "https://dqtfjknmmnozkockksmm.supabase.co/functions/v1/medians";
+
+  const eur = n => new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
+  const gbp = n => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(n);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const $ = id => document.getElementById(id);
+  const status = $("status");
+
+  fetch(FUNCTION_URL)
+    .then(r => r.ok ? r.json() : r.text().then(t => { throw new Error(r.status + " " + t); }))
+    .then(d => {
+      $("zones").innerHTML = d.zones.map(z =>
+        `<tr><td>${esc(z.zone)}</td><td>${z.listings}</td><td>${eur(z.median_price_eur)}</td><td>${Number(z.median_eur_per_m2).toFixed(2)}</td></tr>`
+      ).join("");
+      $("cats").innerHTML = (d.categories || []).map(c =>
+        `<tr><td>${esc(c.category)}</td><td>${c.items}</td><td>${gbp(c.median_price_gbp)}</td></tr>`
+      ).join("") || '<tr><td colspan="3">No rows yet</td></tr>';
+      $("runs").innerHTML = (d.ingests || []).map(i =>
+        `<tr><td>${new Date(i.received_at).toISOString().replace("T", " ").slice(0, 16)} UTC</td><td><code>${esc(i.run_id).slice(0, 8)}…</code></td><td>${i.received}</td><td>${i.valid}</td><td class="${i.inserted === 0 ? "ok" : ""}">${i.inserted}</td><td>${i.skipped}</td></tr>`
+      ).join("") || '<tr><td colspan="6">No runs yet</td></tr>';
+      status.textContent = "Data generated " + new Date(d.generated_at).toISOString().replace("T", " ").slice(0, 19) + " UTC";
+    })
+    .catch(e => {
+      ["zones", "cats", "runs"].forEach(id => { $(id).innerHTML = '<tr><td colspan="6">No data</td></tr>'; });
+      status.textContent = "Could not load: " + e.message;
+      status.className = "err";
+    });
+</script>
+</body>
+</html>
